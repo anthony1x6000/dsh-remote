@@ -1,14 +1,26 @@
 # dsh-remote
 
+[![ci](https://github.com/anthony1x6000/dsh-remote/actions/workflows/ci.yml/badge.svg)](https://github.com/anthony1x6000/dsh-remote/actions/workflows/ci.yml)
+
 Enable remote network access for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh web`) by binding the webserver to `0.0.0.0` instead of local loopback (`127.0.0.1`).
 
 ## Install
 
-Run this one-liner to install the overlay patch into your `dsh` web profile:
+Install the bundle into your `web` profile (pnpm only — no profile hand-editing). It must be a profile whose bundles include the `webserver` row (i.e. `web`): on a base-only profile the install fails loud with `entry "webserver" not found`.
 
 ```sh
-mkdir -p ~/.dsh/profiles/web && touch ~/.dsh/profiles/web/cordis.patch.yml && sed -i '/^\[\][[:space:]]*$/d' ~/.dsh/profiles/web/cordis.patch.yml && { grep -q 'id: webserver' ~/.dsh/profiles/web/cordis.patch.yml || printf -- '- id: webserver\n  config:\n    host: '\''0.0.0.0'\''\n    port: !!js ctx.webStartup.port ?? 3080\n    compression: gzip\n    compressionLevel: 1\n    compressionThresholdBytes: 1024\n' >> ~/.dsh/profiles/web/cordis.patch.yml; }
+dsh plugin --profile web add "github:anthony1x6000/dsh-remote#main"
 ```
+
+Verify the layer without booting:
+
+```sh
+dsh --profile web --dump-config | grep -B 1 -A 4 webserver
+```
+
+Then restart `dsh web` for the new bundle layer to take effect (bundle installs need a restart; repository plugins don't).
+
+To uninstall: `dsh plugin --profile web remove dsh-remote` (then restart). Note `remove` prunes the bundle layer but never touches your own patch file.
 
 Then start the web interface:
 
@@ -33,8 +45,9 @@ dsh web --patch <path-to>/cordis.patch.yml
 
 | File | Description |
 |---|---|
-| `cordis.patch.yml` | Cordis loader patch overlay configuring `@deepseek-ai/dsh-host-webserver` with `host: 0.0.0.0` |
-| `selfcheck.ts` | Verification test for the patch definition |
+| `package.json` | Bundle manifest (`dsh.bundle.patch`); no code, no dependencies |
+| `cordis.patch.yml` | Bundle layer: `@deepseek-ai/dsh-host-webserver` row with `host: 0.0.0.0` |
+| `selfcheck.ts` | Verification test for the manifest and patch definition |
 
 ## Verification
 

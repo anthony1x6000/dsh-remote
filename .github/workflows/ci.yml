@@ -1,0 +1,32 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  selfcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node --experimental-strip-types selfcheck.ts
+
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: pnpm add -g @deepseek-ai/dsh
+      # The bundle overrides the webserver row, so the profile must be one
+      # whose bundles include it — initialize from the web template first.
+      - run: dsh --profile ci-remote --from-default-profile web --dump-config > /dev/null
+      - run: dsh plugin --profile ci-remote add .
+      - run: dsh --profile ci-remote --dump-config | grep -A 8 'id: webserver' | grep '0.0.0.0'

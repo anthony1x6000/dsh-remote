@@ -1,0 +1,22 @@
+{
+  "name": "dsh-remote",
+  "version": "0.1.0",
+  "description": "Bind the DSH webserver to 0.0.0.0 for remote LAN access",
+  "type": "module",
+  "scripts": {
+    "selfcheck": "node --experimental-strip-types selfcheck.ts"
+  },
+  "files": [
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/anthony1x6000/dsh-remote.git"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

@@ -1,7 +1,8 @@
-# Remote access overlay for DeepSeek Harness (dsh web)
-# Usage (without modifying profiles):
-#   dsh web --patch <path-to>/cordis.patch.yml
-# Or install permanently into ~/.dsh/profiles/web/cordis.patch.yml
+# Remote access bundle for DeepSeek Harness (dsh web).
+# Install: dsh plugin --profile web add "github:anthony1x6000/dsh-remote#main"
+# This row overrides the webserver bind; it restates the whole row config
+# (patches replace, never deep-merge). Your profile patch can override it
+# again without touching this package.
 
 - id: webserver
   config:
