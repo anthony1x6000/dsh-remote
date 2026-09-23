@@ -7,7 +7,7 @@ Enable remote network access for [DeepSeek Harness](https://github.com/deepseek-
 Run this one-liner to install the overlay patch into your `dsh` web profile:
 
 ```sh
-node -e 'const fs=require("fs"),path=require("path");const p=path.join(process.env.HOME,".dsh/profiles/web/cordis.patch.yml");fs.mkdirSync(path.dirname(p),{recursive:true});let c=fs.existsSync(p)?fs.readFileSync(p,"utf8"):"";const patch="- id: webserver\n  config:\n    host: '\''0.0.0.0'\''\n    port: !!js ctx.webStartup.port ?? 3080\n    compression: gzip\n    compressionLevel: 1\n    compressionThresholdBytes: 1024\n";if(!c.includes("id: webserver")){c=c.replace(/^\[\]\s*$/m,"");c=(c.trim()?c.trim()+"\n":"")+patch;fs.writeFileSync(p,c);}'
+mkdir -p ~/.dsh/profiles/web && touch ~/.dsh/profiles/web/cordis.patch.yml && sed -i '/^\[\][[:space:]]*$/d' ~/.dsh/profiles/web/cordis.patch.yml && { grep -q 'id: webserver' ~/.dsh/profiles/web/cordis.patch.yml || printf -- '- id: webserver\n  config:\n    host: '\''0.0.0.0'\''\n    port: !!js ctx.webStartup.port ?? 3080\n    compression: gzip\n    compressionLevel: 1\n    compressionThresholdBytes: 1024\n' >> ~/.dsh/profiles/web/cordis.patch.yml; }
 ```
 
 Then start the web interface:
