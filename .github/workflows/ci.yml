@@ -24,9 +24,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - run: pnpm add -g @deepseek-ai/dsh
+      - run: pnpm add -g @deepseek-ai/dsh@0.1.5-rc.3
       # The bundle overrides the webserver row, so the profile must be one
       # whose bundles include it — initialize from the web template first.
       - run: dsh --profile ci-remote --from-default-profile web --dump-config > /dev/null
       - run: dsh plugin --profile ci-remote add .
       - run: dsh --profile ci-remote --dump-config | grep -A 8 'id: webserver' | grep '0.0.0.0'
+      # Tarball installs only see `files`-whitelisted content: prove the
+      # published payload mounts the layer on its own.
+      - run: pnpm pack --pack-destination /tmp/remote-pkg
+      - run: dsh --profile ci-remote-pack --from-default-profile web --dump-config > /dev/null
+      - run: dsh plugin --profile ci-remote-pack add /tmp/remote-pkg/*.tgz
+      - run: dsh --profile ci-remote-pack --dump-config | grep -A 8 'id: webserver' | grep '0.0.0.0'
