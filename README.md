@@ -33,6 +33,14 @@ dsh web
 dsh web: http://127.0.0.1:3080?token=... (LAN: http://192.168.x.x:3080?token=...)
 ```
 
+## Remote Model and API-Key Editing
+
+DSH keeps its settings and credential surfaces loopback-only: a served page off loopback marks itself non-privileged, creates the settings mirror in memory mode, and never reads or writes the Host document. That is why a plain `0.0.0.0` bind gives remote browsers chat and sessions but leaves the Models page read-only and the API-key forms disabled.
+
+This bundle closes that gap on an all-interfaces bind by injecting the same transport global the desktop shell uses (`__DSH_TRANSPORT__ = { ownsHost: true }`) into the served page. A LAN browser then edits models, providers, and API keys exactly as the host machine's browser does. A loopback bind is untouched, so the local GUI keeps DSH's own boundary.
+
+Admission is unchanged: the `/api` Host fence still refuses authorities it was not told about, and the launch token plus signed session cookie still authenticate every browser. Anyone holding a working remote URL is therefore an operator who can repoint providers and overwrite keys — treat the printed LAN URL as a root credential. Credential **reads** stay redacted, so stored key values never cross the wire.
+
 ## Temporary / Ad-hoc Usage
 
 If you prefer not to modify `~/.dsh/profiles/web/cordis.patch.yml`, you can boot with the `--patch` flag directly:
@@ -45,9 +53,10 @@ dsh web --patch <path-to>/cordis.patch.yml
 
 | File | Description |
 |---|---|
-| `package.json` | Bundle manifest (`dsh.bundle.patch`); no code, no dependencies |
-| `cordis.patch.yml` | Bundle layer: `@deepseek-ai/dsh-host-webserver` row with `host: 0.0.0.0` |
-| `selfcheck.ts` | Verification test for the manifest and patch definition |
+| `package.json` | Bundle manifest (`dsh.bundle.patch`) and the plugin entry point |
+| `cordis.patch.yml` | Bundle layer: the `webserver` bind override plus the `remote-operator` host row |
+| `lib/index.js` | Host plugin: injects the operator transport global on an all-interfaces bind |
+| `selfcheck.ts` | Verification test for the manifest, patch, and injection behavior |
 
 ## Verification
 
