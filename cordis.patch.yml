@@ -1,20 +1,23 @@
-# Remote access bundle for DeepSeek Harness (dsh web).
+# Tailnet access bundle for DeepSeek Harness (dsh web).
 # Install: dsh plugin --profile web add "github:anthony1x6000/dsh-remote#main"
-# This row overrides the webserver bind; it restates the whole row config
-# (patches replace, never deep-merge). Your profile patch can override it
-# again without touching this package.
+#
+# DSH rejects wildcard binds, so this bundle leaves the webserver row on its
+# loopback default and forwards the machine's Tailscale address(es) to it over
+# raw TCP. The plugin reads the live interfaces at boot, so bring Tailscale up
+# before starting dsh web.
 
-- id: webserver
+# A forwarded tailnet authority is not the listener's own bind address, so the
+# /api Host fence would answer 403 without naming it. Connection waits for the
+# `remoteBind` service the row below provides, then trusts those addresses on
+# any port (the shape `--trusted-host` uses for tunnels).
+- id: connection
+  inject: [webStartup, remoteBind]
   config:
-    host: '0.0.0.0'
-    port: !!js ctx.webStartup.port ?? 3080
-    compression: gzip
-    compressionLevel: 1
-    compressionThresholdBytes: 1024
+    trustedHosts: !!js [...ctx.webStartup.trustedHosts, ...ctx.remoteBind.authorities]
 
-# The host half. On an all-interfaces bind it injects the operator transport
-# global into the served page, which is what lets a LAN browser edit models and
-# API keys; a loopback bind injects nothing. See lib/index.js.
+# The host half: provides `remoteBind`, starts the tailnet forwarders, prints
+# their tokenized URLs, and injects the operator transport global so a tailnet
+# browser can edit models and API keys. See lib/index.js.
 - insert:
     - id: remote-operator
       name: 'dsh-remote'
