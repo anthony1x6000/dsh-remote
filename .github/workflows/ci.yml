@@ -35,9 +35,12 @@ jobs:
       - run: $DSH --profile ci-remote --from-default-profile web --dump-config > /dev/null
       - run: $DSH plugin --profile ci-remote add .
       - run: "$DSH --profile ci-remote --dump-config | grep -A 8 'id: webserver' | grep '0.0.0.0'"
+      # The inserted host row is what unlocks remote model/API-key editing.
+      - run: "$DSH --profile ci-remote --dump-config | grep -A 2 'id: remote-operator' | grep 'dsh-remote'"
       # Tarball installs only see `files`-whitelisted content: prove the
       # published payload mounts the layer on its own.
       - run: pnpm pack --pack-destination /tmp/remote-pkg
       - run: $DSH --profile ci-remote-pack --from-default-profile web --dump-config > /dev/null
       - run: $DSH plugin --profile ci-remote-pack add /tmp/remote-pkg/*.tgz
       - run: "$DSH --profile ci-remote-pack --dump-config | grep -A 8 'id: webserver' | grep '0.0.0.0'"
+      - run: "$DSH --profile ci-remote-pack --dump-config | grep -A 2 'id: remote-operator' | grep 'dsh-remote'"

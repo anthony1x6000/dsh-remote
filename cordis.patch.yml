@@ -11,3 +11,10 @@
     compression: gzip
     compressionLevel: 1
     compressionThresholdBytes: 1024
+
+# The host half. On an all-interfaces bind it injects the operator transport
+# global into the served page, which is what lets a LAN browser edit models and
+# API keys; a loopback bind injects nothing. See lib/index.js.
+- insert:
+    - id: remote-operator
+      name: 'dsh-remote'
