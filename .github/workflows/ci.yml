@@ -29,18 +29,23 @@ jobs:
           node-version: 24
       # Hermetic CLI install (no global bin PATH involved); native builds
       # below are the exact set pnpm gates, approved explicitly.
-      - run: mkdir -p /tmp/dsh-cli && cd /tmp/dsh-cli && pnpm init -y > /dev/null && pnpm add @deepseek-ai/dsh@0.1.5-rc.3 --allow-build @google/genai --allow-build @deepseek-ai/dsh-subprocess-local --allow-build koffi --allow-build node-pty --allow-build protobufjs
-      # The bundle overrides the webserver row, so the profile must be one
-      # whose bundles include it — initialize from the web template first.
+      - run: mkdir -p /tmp/dsh-cli && cd /tmp/dsh-cli && pnpm init -y > /dev/null && pnpm add @deepseek-ai/dsh@0.2.1-rc.2 --allow-build @google/genai --allow-build @deepseek-ai/dsh-subprocess-local --allow-build koffi --allow-build node-pty --allow-build protobufjs
+      # The bundle patches the connection row, so the profile must be one whose
+      # bundles include it — initialize from the web template first.
       - run: $DSH --profile ci-remote --from-default-profile web --dump-config > /dev/null
       - run: $DSH plugin --profile ci-remote add .
-      - run: "$DSH --profile ci-remote --dump-config | grep -A 8 'id: webserver' | grep '0.0.0.0'"
-      # The inserted host row is what unlocks remote model/API-key editing.
+      # The bundle must leave the webserver row alone: current DSH rejects a
+      # wildcard bind, so any `0.0.0.0` here means the bundle would not boot.
+      - run: "! $DSH --profile ci-remote --dump-config | grep -A 8 'id: webserver' | grep '0.0.0.0'"
+      # Each forwarded tailnet authority must reach the /api fence.
+      - run: "$DSH --profile ci-remote --dump-config | grep -A 10 'id: connection' | grep 'remoteBind.authorities'"
+      # The inserted host row provides those authorities and unlocks remote editing.
       - run: "$DSH --profile ci-remote --dump-config | grep -A 2 'id: remote-operator' | grep 'dsh-remote'"
       # Tarball installs only see `files`-whitelisted content: prove the
       # published payload mounts the layer on its own.
       - run: pnpm pack --pack-destination /tmp/remote-pkg
       - run: $DSH --profile ci-remote-pack --from-default-profile web --dump-config > /dev/null
       - run: $DSH plugin --profile ci-remote-pack add /tmp/remote-pkg/*.tgz
-      - run: "$DSH --profile ci-remote-pack --dump-config | grep -A 8 'id: webserver' | grep '0.0.0.0'"
+      - run: "! $DSH --profile ci-remote-pack --dump-config | grep -A 8 'id: webserver' | grep '0.0.0.0'"
+      - run: "$DSH --profile ci-remote-pack --dump-config | grep -A 10 'id: connection' | grep 'remoteBind.authorities'"
       - run: "$DSH --profile ci-remote-pack --dump-config | grep -A 2 'id: remote-operator' | grep 'dsh-remote'"
