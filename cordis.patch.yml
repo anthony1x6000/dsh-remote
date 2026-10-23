@@ -13,7 +13,7 @@
 - id: connection
   inject: [webStartup, remoteBind]
   config:
-    trustedHosts: !!js [...ctx.webStartup.trustedHosts, ...ctx.remoteBind.authorities]
+    trustedHosts: !!js "[...ctx.webStartup.trustedHosts, ...ctx.remoteBind.authorities]"
 
 # The host half: provides `remoteBind`, starts the tailnet forwarders, prints
 # their tokenized URLs, and injects the operator transport global so a tailnet

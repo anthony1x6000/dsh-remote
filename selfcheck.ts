@@ -30,7 +30,10 @@ assert(!patchContent.includes('0.0.0.0'), 'patch must never request a wildcard b
 // The forwarder's authority is not the webserver's bind IP, so the /api fence
 // has to be told about it or every tailnet request answers 403.
 assert.match(patchContent, /- id: connection\n\s+inject: \[webStartup, remoteBind\]/u, 'connection must wait for the forwarder authorities')
-assert.match(patchContent, /trustedHosts: !!js \[\.\.\.ctx\.webStartup\.trustedHosts, \.\.\.ctx\.remoteBind\.authorities\]/u, 'connection must trust the forwarded authorities')
+assert.match(patchContent, /trustedHosts: !!js "\[\.\.\.ctx\.webStartup\.trustedHosts, \.\.\.ctx\.remoteBind\.authorities\]"/u, 'connection must trust the forwarded authorities')
+// The entry-list dialect tags SCALARS: `!!js [...]` would tag a sequence node
+// and fail install validation with `unknown tag`.
+assert(!/!!js\s*\[/u.test(patchContent), '!!js expressions must be quoted scalars, not tagged sequences')
 assert.match(patchContent, /- id: remote-operator\n\s+name: 'dsh-remote'/u, 'patch must insert the remote-operator row')
 
 assert(typeof manifest.main === 'string' && manifest.main.length > 0, 'package.json must declare the plugin entry')
