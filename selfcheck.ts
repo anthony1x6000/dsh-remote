@@ -58,6 +58,7 @@ const plugin = await import(pathToFileURL(join(root, entryFile)).href) as {
   inject: string[]
   apply(ctx: unknown): void
   startForwarders(options: ForwarderOptions): Promise<Forwarders>
+  tailscaleIPv4(interfaces?: Record<string, { address: string, family: string, internal: boolean }[]>): string[]
   internals: {
     tailscaleIPv4(): string[]
     startForwarders(options: ForwarderOptions): Promise<Forwarders>
@@ -65,6 +66,17 @@ const plugin = await import(pathToFileURL(join(root, entryFile)).href) as {
 }
 assert.strictEqual(plugin.name, 'dsh-remote', 'plugin name matches the row name')
 assert(plugin.inject.includes('webServer'), 'plugin activates after the webserver it forwards to')
+
+// Only Tailscale interfaces count, and only their IPv4 rows: a LAN address or
+// a tailnet IPv6 row must not become a forwarded authority.
+assert.deepStrictEqual(plugin.tailscaleIPv4({
+  lo: [{ address: '127.0.0.1', family: 'IPv4', internal: true }],
+  ens18: [{ address: '192.168.0.138', family: 'IPv4', internal: false }],
+  tailscale0: [
+    { address: '100.92.191.33', family: 'IPv4', internal: false },
+    { address: 'fd7a:115c:a1e0::ae01:bfd5', family: 'IPv6', internal: false },
+  ],
+}), ['100.92.191.33'], 'only tailscale IPv4 rows are forwarded')
 
 /** Minimal host context: capture index-inject listeners, provide, and effects. */
 function fakeContext(addresses: string[]) {

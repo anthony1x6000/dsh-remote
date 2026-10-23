@@ -38,7 +38,7 @@ jobs:
       # wildcard bind, so any `0.0.0.0` here means the bundle would not boot.
       - run: "! $DSH --profile ci-remote --dump-config | grep -A 8 'id: webserver' | grep '0.0.0.0'"
       # Each forwarded tailnet authority must reach the /api fence.
-      - run: "$DSH --profile ci-remote --dump-config | grep -A 4 'id: connection' | grep 'remoteBind.authorities'"
+      - run: "$DSH --profile ci-remote --dump-config | grep -A 10 'id: connection' | grep 'remoteBind.authorities'"
       # The inserted host row provides those authorities and unlocks remote editing.
       - run: "$DSH --profile ci-remote --dump-config | grep -A 2 'id: remote-operator' | grep 'dsh-remote'"
       # Tarball installs only see `files`-whitelisted content: prove the
@@ -47,5 +47,5 @@ jobs:
       - run: $DSH --profile ci-remote-pack --from-default-profile web --dump-config > /dev/null
       - run: $DSH plugin --profile ci-remote-pack add /tmp/remote-pkg/*.tgz
       - run: "! $DSH --profile ci-remote-pack --dump-config | grep -A 8 'id: webserver' | grep '0.0.0.0'"
-      - run: "$DSH --profile ci-remote-pack --dump-config | grep -A 4 'id: connection' | grep 'remoteBind.authorities'"
+      - run: "$DSH --profile ci-remote-pack --dump-config | grep -A 10 'id: connection' | grep 'remoteBind.authorities'"
       - run: "$DSH --profile ci-remote-pack --dump-config | grep -A 2 'id: remote-operator' | grep 'dsh-remote'"
