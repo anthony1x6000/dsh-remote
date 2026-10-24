@@ -34,7 +34,11 @@ dump_logs() {
 }
 trap dump_logs ERR
 
-fail() { echo "portable-e2e: $*" >&2; exit 1; }
+fail() {
+  echo "portable-e2e: $*" >&2
+  dump_logs
+  exit 1
+}
 
 mkdir -p "$WORK"
 

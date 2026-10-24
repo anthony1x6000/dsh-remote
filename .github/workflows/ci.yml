@@ -59,8 +59,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DSH: /tmp/dsh-cli/node_modules/.bin/dsh
-      # PortableTailscale ref providing --forward; main once its PR merges.
-      PT_REF: feat/forward
+      # PortableTailscale ref providing --forward (merged as #18).
+      PT_REF: main
     steps:
       - uses: actions/checkout@v4
       - uses: actions/checkout@v4

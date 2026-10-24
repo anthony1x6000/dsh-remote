@@ -254,9 +254,12 @@ try {
   const stop = plugin.internals.startPortable(portableCtx, { bin: fakePortable, hostname: 'dsh-e2e', port: 3080 })
   await new Promise<void>((resolve) => { setTimeout(resolve, 500) })
   stop()
+  assert.strictEqual(injected.length, 1, 'the connected event asks for the connection service')
+  // The URL prints when the connection service resolves, which the fake ctx
+  // models by running the injected callback directly — still under the log
+  // capture, or the print escapes the assertion.
+  injected[0].run({ connection: { authenticatedUrl: (base: string) => `${base}?token=t` } })
 } finally {
   console.log = originalLog
 }
-assert.strictEqual(injected.length, 1, 'the connected event asks for the connection service')
-injected[0].run({ connection: { authenticatedUrl: (base: string) => `${base}?token=t` } })
 assert.deepStrictEqual(printed, ['dsh-remote (portable): http://dsh-e2e:3080?token=t'], 'the tokenized tailnet URL prints on connect')
