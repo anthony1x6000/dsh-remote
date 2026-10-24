@@ -93,9 +93,23 @@ echo "   client connected"
 
 echo "== fetch the GUI through the client proxy"
 PROXY=http://127.0.0.1:41112
-CODE=$(curl -sS -L --max-time 30 -x "$PROXY" -o "$WORK/page.html" -w '%{http_code}' "$GUI_URL") \
-  || fail "curl through the proxy failed"
-[ "$CODE" = "200" ] || fail "expected HTTP 200 through the bridge, got $CODE"
+# Control: the same tokenized URL on the webserver's own loopback address must
+# admit curl; if it does not, any later failure is about the auth flow, not
+# the bridge.
+LOOP_URL=$(sed -n 's/^dsh web: //p' "$WORK/dsh.out" | head -n 1)
+CONTROL_CODE=$(curl -sS -L --max-time 30 -c "$WORK/control-jar" -b "$WORK/control-jar" -o "$WORK/control.html" -w '%{http_code}' "$LOOP_URL") \
+  || fail "control curl against the loopback URL failed"
+echo "   control (loopback): $CONTROL_CODE"
+
+CODE=$(curl -sS -v -L --max-time 30 -x "$PROXY" -c "$WORK/jar" -b "$WORK/jar" -o "$WORK/page.html" -D "$WORK/headers.txt" -w '%{http_code}' "$GUI_URL" 2> "$WORK/curl.trace") \
+  || { cat "$WORK/curl.trace"; fail "curl through the proxy failed"; }
+echo "   through the bridge: $CODE (control was $CONTROL_CODE)"
+if [ "$CODE" != "200" ]; then
+  echo "===== headers ====="; cat "$WORK/headers.txt" || true
+  echo "===== body ====="; head -c 2000 "$WORK/page.html" || true
+  echo "===== curl trace ====="; tail -n 40 "$WORK/curl.trace" || true
+  fail "expected HTTP 200 through the bridge, got $CODE"
+fi
 grep -qi '<html' "$WORK/page.html" || fail "the response is not the GUI page"
 
 echo "== the /api fence accepts the tailnet authority"
