@@ -46,6 +46,42 @@ Two obligations follow from that:
 - **Fence authorities** — the `/api` Host fence accepts the webserver's own bind address only, so each forwarded address is added to Connection's `trustedHosts`. Without it every tailnet API call would answer 403.
 - **Operator transport** — DSH keeps its settings and credential surfaces loopback-only: a page off loopback marks itself non-privileged, creates the settings mirror in memory mode, and never touches the Host document. A tailnet browser would therefore see read-only models and disabled API-key forms. The bundle injects the same transport global the desktop shell uses (`__DSH_TRANSPORT__ = { ownsHost: true }`), which restores host-persisted settings and credential writes.
 
+## No Tailscale installation (PortableTailscale bridge)
+
+On a machine without Tailscale — or where you cannot install it — dsh-remote
+bridges the GUI through [PortableTailscale](https://github.com/anthony1x6000/PortableTailscale),
+an ephemeral userspace tailnet node that needs no administrator rights and
+installs nothing. The node serves the port inside its tunnel and relays to
+DSH's loopback listener, so DSH's own configuration is untouched.
+
+1. Download `PortableTailscale` (Linux or Windows build) from its Actions
+   artifacts and put it anywhere.
+2. Point dsh-remote at it and boot:
+
+   ```sh
+   export DSH_REMOTE_PORTABLE_BIN=/path/to/PortableTailscale
+   # optional: DSH_REMOTE_PORTABLE_HOSTNAME=my-dsh-host — the tailnet name,
+   # defaulting to this machine's hostname
+   dsh web
+   ```
+
+3. dsh-remote starts the node with `--forward 3080:3080`; complete the
+   per-boot Tailscale sign-in when the node prints its URL, and then:
+
+   ```
+   dsh-remote (portable): http://my-dsh-host:3080?token=...
+   ```
+
+Open that URL from any tailnet device running PortableTailscale (browsers
+through its installed PAC, `curl -x socks5h://...` otherwise). The tailnet
+name in the URL is the trusted `/api` authority, and remote model and API-key
+editing work exactly as over real Tailscale. Ephemeral means what it says:
+every boot is a new node and asks for sign-in once; nothing persists.
+
+Note that the bridge, like the forwarder, relays to loopback: DSH sees every
+connection as coming from the local machine, per-client source addresses are
+not preserved, and the tailnet ACL is the only access gate.
+
 ## Security
 
 Admission is unchanged: the launch token and signed session cookie still authenticate every browser, and credential **reads** stay redacted, so stored key values never cross the wire. But a tailnet browser is treated as the operator: anyone holding a working URL can repoint providers and overwrite keys. Treat the printed `dsh-remote` URL as a root credential and keep the tailnet ACL for port 3080 restricted.
