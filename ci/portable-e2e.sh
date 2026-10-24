@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # Portable-bridge end-to-end test: dsh web + dsh-remote + two PortableTailscale
 # roles against a loopback fake control server, no secrets anywhere.
 #
