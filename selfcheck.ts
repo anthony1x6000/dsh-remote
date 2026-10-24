@@ -1,5 +1,5 @@
 import assert from 'node:assert'
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 import { connect } from 'node:net'
 import { createServer } from 'node:net'
 import { join } from 'node:path'
@@ -177,3 +177,86 @@ assert.deepStrictEqual(noRows, [], 'without a tailnet address nothing is injecte
 assert.deepStrictEqual(offline.provided.get('remoteBind'), { authorities: [] }, 'an empty authority list keeps the fence closed')
 
 console.log('dsh-remote selfcheck: ok')
+
+// --- Portable bridge (no Tailscale interface on the machine) ---
+
+const portable = plugin as unknown as {
+  portableHostname(env?: Record<string, string | undefined>, osName?: string): string
+  portableArgs(options: { hostname: string, port: number, extra?: string[] }): string[]
+}
+
+// The tailnet name must end up a DNS label: it is both the URL host and the
+// trusted /api authority.
+assert.strictEqual(portable.portableHostname({ DSH_REMOTE_PORTABLE_HOSTNAME: 'My_Host!!' }, 'ignored'), 'my-host')
+assert.strictEqual(portable.portableHostname({}, 'Runner-01'), 'runner-01')
+assert.strictEqual(portable.portableHostname({ DSH_REMOTE_PORTABLE_HOSTNAME: '---' }, 'Runner-01'), 'runner-01', 'a sanitization-only override falls back to the hostname')
+assert.strictEqual(portable.portableHostname({}, ''), 'dsh', 'no hostname at all still yields a name')
+
+assert.deepStrictEqual(
+  portable.portableArgs({ hostname: 'dsh-e2e', port: 3080, extra: ['--control-url', 'http://127.0.0.1:1'] }),
+  ['--json', '--hostname', 'dsh-e2e', '--forward', '3080:3080', '--control-url', 'http://127.0.0.1:1'],
+  'the bridge bridges the webserver port and passes extra args through',
+)
+
+// apply() with no interface and no configured binary keeps the fence closed.
+const bare = fakeContext([])
+const savedBin = process.env.DSH_REMOTE_PORTABLE_BIN
+delete process.env.DSH_REMOTE_PORTABLE_BIN
+plugin.apply(bare.ctx as never)
+assert.deepStrictEqual(bare.provided.get('remoteBind'), { authorities: [] }, 'without a bridge binary the fence stays closed')
+const bareRows: unknown[] = []
+bare.emit(bareRows)
+assert.deepStrictEqual(bareRows, [], 'without a bridge binary nothing is injected')
+if (savedBin !== undefined) process.env.DSH_REMOTE_PORTABLE_BIN = savedBin
+
+// apply() with no interface but a configured binary: the hostname becomes the
+// authority, the operator transport is injected, and the spawn gets the
+// bridged port plus any extra args.
+const bridged = fakeContext([])
+const spawnCalls: { bin: string, hostname: string, port: number, extra: string[] }[] = []
+const realStartPortable = plugin.internals.startPortable
+plugin.internals.startPortable = (ctx: unknown, options: { bin: string, hostname: string, port: number, extra: string[] }) => {
+  spawnCalls.push({ bin: options.bin, hostname: options.hostname, port: options.port, extra: options.extra })
+  return () => {}
+}
+process.env.DSH_REMOTE_PORTABLE_BIN = '/opt/PortableTailscale'
+process.env.DSH_REMOTE_PORTABLE_ARGS = '--control-url http://127.0.0.1:1'
+process.env.DSH_REMOTE_PORTABLE_HOSTNAME = 'dsh-e2e'
+try {
+  plugin.apply(bridged.ctx as never)
+} finally {
+  delete process.env.DSH_REMOTE_PORTABLE_BIN
+  delete process.env.DSH_REMOTE_PORTABLE_ARGS
+  delete process.env.DSH_REMOTE_PORTABLE_HOSTNAME
+}
+assert.deepStrictEqual(bridged.provided.get('remoteBind'), { authorities: ['dsh-e2e'] }, 'the tailnet name is the fence authority')
+const bridgedRows: unknown[] = []
+bridged.emit(bridgedRows)
+assert.deepStrictEqual(bridgedRows, [{ kind: 'global', name: '__DSH_TRANSPORT__', value: { ownsHost: true } }], 'a portable browser is admitted as the operator')
+assert.deepStrictEqual(spawnCalls, [{ bin: '/opt/PortableTailscale', hostname: 'dsh-e2e', port: 3080, extra: ['--control-url', 'http://127.0.0.1:1'] }], 'the bridge spawns with the port bridged and extra args')
+
+// The real event plumbing: a fake portable binary prints a connected event,
+// and the plugin answers with the tokenized tailnet URL.
+plugin.internals.startPortable = realStartPortable
+const fakePortable = '/tmp/dsh-remote-fake-portable.sh'
+writeFileSync(fakePortable, '#!/bin/sh\necho \'{"event":"connected"}\'\nexec sleep 300\n', { mode: 0o755 })
+const printed: string[] = []
+const originalLog = console.log
+const injected: { services: string[], run(ctx: unknown): void }[] = []
+const portableCtx = {
+  inject(services: string[], run: (ctx: unknown) => void) {
+    injected.push({ services, run })
+    return () => {}
+  },
+}
+console.log = (line: string) => { printed.push(line) }
+try {
+  const stop = plugin.internals.startPortable(portableCtx, { bin: fakePortable, hostname: 'dsh-e2e', port: 3080 })
+  await new Promise<void>((resolve) => { setTimeout(resolve, 500) })
+  stop()
+} finally {
+  console.log = originalLog
+}
+assert.strictEqual(injected.length, 1, 'the connected event asks for the connection service')
+injected[0].run({ connection: { authenticatedUrl: (base: string) => `${base}?token=t` } })
+assert.deepStrictEqual(printed, ['dsh-remote (portable): http://dsh-e2e:3080?token=t'], 'the tokenized tailnet URL prints on connect')

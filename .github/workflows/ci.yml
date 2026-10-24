@@ -49,3 +49,34 @@ jobs:
       - run: "! $DSH --profile ci-remote-pack --dump-config | grep -A 8 'id: webserver' | grep '0.0.0.0'"
       - run: "$DSH --profile ci-remote-pack --dump-config | grep -A 10 'id: connection' | grep 'remoteBind.authorities'"
       - run: "$DSH --profile ci-remote-pack --dump-config | grep -A 2 'id: remote-operator' | grep 'dsh-remote'"
+
+  # The portable bridge, end to end against a real `dsh web`: no Tailscale
+  # installation, no admin, no secrets. A loopback fake tailnet world stands
+  # in for control, dsh-remote spawns the server-side node itself, and curl
+  # through a second node's proxy must load the authenticated GUI URL and get
+  # past the /api Host fence. See ci/portable-e2e.sh.
+  portable-e2e:
+    runs-on: ubuntu-latest
+    env:
+      DSH: /tmp/dsh-cli/node_modules/.bin/dsh
+      # PortableTailscale ref providing --forward; main once its PR merges.
+      PT_REF: feat/forward
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: anthony1x6000/PortableTailscale
+          ref: ${{ env.PT_REF }}
+          path: portabletailscale
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: portabletailscale/go.mod
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      # Same hermetic CLI install as the install job: the e2e runs a real dsh.
+      - run: mkdir -p /tmp/dsh-cli && cd /tmp/dsh-cli && pnpm init -y > /dev/null && pnpm add @deepseek-ai/dsh@0.2.1-rc.2 --allow-build @google/genai --allow-build @deepseek-ai/dsh-subprocess-local --allow-build koffi --allow-build node-pty --allow-build protobufjs
+      - run: $DSH --profile portable-e2e --from-default-profile web --dump-config > /dev/null
+      - run: $DSH plugin --profile portable-e2e add .
+      - run: chmod +x ci/portable-e2e.sh && PT_DIR="$GITHUB_WORKSPACE/portabletailscale" ./ci/portable-e2e.sh
