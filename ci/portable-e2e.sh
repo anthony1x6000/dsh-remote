@@ -60,20 +60,25 @@ echo "   control: $CONTROL"
 
 echo "== boot dsh web with the portable bridge"
 # The plugin spawns the server-side PortableTailscale itself; the fake key and
-# control URL make its login headless.
+# control URL make its login headless. Launching the profile (initialized
+# --from-default-profile web, so its bundles include the webserver) boots the
+# GUI; this dsh takes no positional subcommand.
 export DSH_REMOTE_PORTABLE_BIN="$WORK/PortableTailscale"
 export DSH_REMOTE_PORTABLE_HOSTNAME=dsh-e2e
 export DSH_REMOTE_PORTABLE_ARGS="--control-url $CONTROL"
 export TS_AUTHKEY=e2e-key
-"$DSH" --profile portable-e2e web > "$WORK/dsh.out" 2> "$WORK/dsh.err" & PIDS="$PIDS $!"
+"$DSH" --profile portable-e2e > "$WORK/dsh.out" 2> "$WORK/dsh.err" & PIDS="$PIDS $!"
 
 GUI_URL=""
 for _ in $(seq 1 120); do
+  # The webserver's own loopback URL proves the GUI booted; the dsh-remote
+  # line then proves the plugin spawned the bridge and the node connected.
+  grep -q '127.0.0.1:3080' "$WORK/dsh.out" 2>/dev/null && WEB_UP=1 || WEB_UP=""
   GUI_URL=$(sed -n 's/^dsh-remote (portable): //p' "$WORK/dsh.out" | head -n 1)
   [ -n "$GUI_URL" ] && break
   sleep 1
 done
-[ -n "$GUI_URL" ] || fail "dsh-remote never printed the portable URL"
+[ -n "$GUI_URL" ] || { [ -n "${WEB_UP:-}" ] && fail "the web GUI booted but dsh-remote never printed the portable URL" || fail "the web GUI never booted"; }
 echo "   gui url: $GUI_URL"
 
 echo "== start the client-side node with the PAC proxy"
