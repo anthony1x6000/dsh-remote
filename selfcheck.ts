@@ -178,6 +178,43 @@ assert.deepStrictEqual(offline.provided.get('remoteBind'), { authorities: [] }, 
 
 console.log('dsh-remote selfcheck: ok')
 
+// The MagicDNS name is an authority and a printed URL, not just the
+// interface addresses: a browser at the FQDN sends that FQDN as Host.
+const fqdnPlugin = plugin as unknown as {
+  parseTailscaleFqdn(json: string): string
+}
+assert.strictEqual(fqdnPlugin.parseTailscaleFqdn('{"Self":{"DNSName":"Virt-Agentpc.tail316328.ts.NET."}}'), 'virt-agentpc.tail316328.ts.net', 'the FQDN loses its trailing dot and case')
+assert.strictEqual(fqdnPlugin.parseTailscaleFqdn('{"Self":{"DNSName":""}}'), '', 'an unnamed self yields no authority')
+assert.strictEqual(fqdnPlugin.parseTailscaleFqdn('not json'), '', 'unparseable status yields no authority')
+assert.strictEqual(fqdnPlugin.parseTailscaleFqdn('{}'), '', 'a missing self yields no authority')
+
+const withFqdn = fakeContext(['100.92.191.33'])
+const realTailscaleFqdn = plugin.internals.tailscaleFqdn
+plugin.internals.tailscaleFqdn = () => 'virt-agentpc.tail316328.ts.net'
+const urlsPrinted: string[] = []
+const realInjectLog = console.log
+let urlRun: ((ctx: unknown) => void) | undefined
+const withFqdnCtx = {
+  ...withFqdn.ctx,
+  inject(_services: string[], run: (ctx: unknown) => void) {
+    urlRun = run
+    return () => {}
+  },
+}
+try {
+  console.log = (line: string) => { urlsPrinted.push(line) }
+  plugin.apply(withFqdnCtx as never)
+  urlRun?.({ connection: { authenticatedUrl: (base: string) => `${base}?token=t` } })
+} finally {
+  console.log = realInjectLog
+  plugin.internals.tailscaleFqdn = realTailscaleFqdn
+}
+assert.deepStrictEqual(withFqdn.provided.get('remoteBind'), { authorities: ['100.92.191.33', 'virt-agentpc.tail316328.ts.net'] }, 'the FQDN is trusted next to the addresses')
+assert.deepStrictEqual(urlsPrinted, [
+  'dsh-remote: http://100.92.191.33:3080?token=t',
+  'dsh-remote: http://virt-agentpc.tail316328.ts.net:3080?token=t',
+], 'a tokenized URL prints for every address and the FQDN')
+
 // --- Portable bridge (no Tailscale interface on the machine) ---
 
 const portable = plugin as unknown as {

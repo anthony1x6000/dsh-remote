@@ -33,7 +33,10 @@ DSH still binds its loopback listener, and the bundle prints a tokenized tailnet
 ```
 dsh web: http://127.0.0.1:3080?token=...
 dsh-remote: http://100.x.y.z:3080?token=...
+dsh-remote: http://machine.tail-scale.ts.net:3080?token=...
 ```
+
+The MagicDNS name line appears when `tailscale status` names this machine: browsers reach it by that name, so the name is both printed and added to the fence authorities next to the addresses.
 
 Open the `dsh-remote` line from any tailnet device.
 
