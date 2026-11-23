@@ -51,6 +51,7 @@ interface ForwarderOptions {
   addresses: string[]
   port: number
   targetPort: number
+  allow?: (address: string | undefined) => boolean
 }
 
 const plugin = await import(pathToFileURL(join(root, entryFile)).href) as {
@@ -58,6 +59,7 @@ const plugin = await import(pathToFileURL(join(root, entryFile)).href) as {
   inject: string[]
   apply(ctx: unknown): void
   startForwarders(options: ForwarderOptions): Promise<Forwarders>
+  isTailnetAddress(address: string | undefined): boolean
   tailscaleIPv4(interfaces?: Record<string, { address: string, family: string, internal: boolean }[]>): string[]
   internals: {
     tailscaleIPv4(): string[]
@@ -136,7 +138,9 @@ async function echoServer() {
 
 const echo = await echoServer()
 try {
-  const forwarder = await plugin.startForwarders({ addresses: ['127.0.0.1'], port: 0, targetPort: echo.port })
+  // The relay itself is exercised from loopback, so admit every peer here;
+  // the tailnet-only default has its own case below.
+  const forwarder = await plugin.startForwarders({ addresses: ['127.0.0.1'], port: 0, targetPort: echo.port, allow: () => true })
   assert.deepStrictEqual(forwarder.failures, [], 'the loopback authority binds')
   assert.strictEqual(forwarder.bound.length, 1, 'one listener per authority')
   const bound = forwarder.bound[0]
@@ -156,6 +160,26 @@ try {
   })
   assert.strictEqual(reply, 'ping', 'forwarder relays bytes to the loopback listener')
   forwarder.close()
+
+  // Default policy: tailnet peers only. A loopback (or LAN) client is dropped
+  // before anything is relayed.
+  const guarded = await plugin.startForwarders({ addresses: ['127.0.0.1'], port: 0, targetPort: echo.port })
+  const realError = console.error
+  console.error = () => {}
+  try {
+    const got = await new Promise<string>((resolve) => {
+      const client = connect(guarded.bound[0].port, '127.0.0.1')
+      let data = ''
+      client.on('data', (chunk: Buffer) => { data += chunk.toString('utf8') })
+      client.once('error', () => resolve(data))
+      client.once('close', () => resolve(data))
+      client.write('ping')
+    })
+    assert.strictEqual(got, '', 'a non-tailnet peer is refused, nothing relayed')
+  } finally {
+    console.error = realError
+    guarded.close()
+  }
 } finally {
   await echo.close()
 }
@@ -175,6 +199,14 @@ const noRows: unknown[] = []
 offline.emit(noRows)
 assert.deepStrictEqual(noRows, [], 'without a tailnet address nothing is injected')
 assert.deepStrictEqual(offline.provided.get('remoteBind'), { authorities: [] }, 'an empty authority list keeps the fence closed')
+
+// Tailnet ranges only: 100.64.0.0/10 and fd7a:115c:a1e0::/48.
+for (const ok of ['100.64.0.1', '100.91.152.18', '100.127.255.254', '::ffff:100.100.1.2', 'fd7a:115c:a1e0::ae01:bfd5', 'FD7A:115C:A1E0:ab12::1']) {
+  assert.strictEqual(plugin.isTailnetAddress(ok), true, `${ok} is a tailnet address`)
+}
+for (const bad of ['192.168.0.10', '10.0.0.5', '127.0.0.1', '100.63.255.255', '100.128.0.1', '::ffff:192.168.1.2', '::1', 'fd7a:115c:a1e1::1', 'fe80::1', '', undefined]) {
+  assert.strictEqual(plugin.isTailnetAddress(bad), false, `${String(bad)} is not a tailnet address`)
+}
 
 console.log('dsh-remote selfcheck: ok')
 
