@@ -1,5 +1,5 @@
 import assert from 'node:assert'
-import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { connect } from 'node:net'
 import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -66,6 +66,7 @@ const plugin = await import(pathToFileURL(join(root, entryFile)).href) as {
   parseTailscaleFqdn(json: string): string
   fenceHosts(authorities: string[], port: number): string[]
   notionConfigPath(home?: string): string
+  notionInstalled(profileDir?: string, home?: string): boolean
   syncNotionFence(options: {
     authorities: string[]
     port: number
@@ -387,6 +388,20 @@ try {
   const absent = join(fenceDir, 'absent', 'notion.json')
   assert.strictEqual(plugin.syncNotionFence({ authorities: ['virt.tail.ts.net'], port: 4890, configPath: absent, installed: false, log: () => {} }), 'skipped', 'an absent connector is not configured')
   assert.strictEqual(existsSync(absent), false, 'nothing is created for an uninstalled connector')
+
+  // The web service process has no DSH_PROFILE_DIR, so profile detection must
+  // fall back to scanning ~/.dsh/profiles; otherwise a fresh install never
+  // gets its allowlist seeded.
+  const profileHome = mkdtempSync(join(tmpdir(), 'dsh-remote-profile-'))
+  try {
+    assert.strictEqual(plugin.notionInstalled(undefined, profileHome), false, 'no profiles means no connector to configure')
+    mkdirSync(join(profileHome, '.dsh', 'profiles', 'web', 'node_modules', 'dsh-notion-connector'), { recursive: true })
+    writeFileSync(join(profileHome, '.dsh', 'profiles', 'web', 'node_modules', 'dsh-notion-connector', 'package.json'), '{}')
+    assert.strictEqual(plugin.notionInstalled(undefined, profileHome), true, 'a connector installed in any profile enables the sync')
+    assert.strictEqual(plugin.notionInstalled(join(profileHome, 'empty'), profileHome), false, 'an explicitly named profile is the only place checked')
+  } finally {
+    rmSync(profileHome, { recursive: true, force: true })
+  }
 } finally {
   rmSync(fenceDir, { recursive: true, force: true })
 }
