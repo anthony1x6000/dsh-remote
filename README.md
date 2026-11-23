@@ -44,9 +44,10 @@ Open the `dsh-remote` line from any tailnet device.
 
 DSH binds one concrete address and **rejects wildcard listens**: `0.0.0.0` is a refused configuration, not an oversight. So this bundle does not rewrite the `webserver` row. It forwards each Tailscale IPv4 address at the same port to DSH's loopback listener over raw TCP — HTTP, WebSocket upgrades, and TLS pass through unchanged, and the local GUI keeps working on `127.0.0.1`.
 
-Two obligations follow from that:
+Three obligations follow from that:
 
 - **Fence authorities** — the `/api` Host fence accepts the webserver's own bind address only, so each forwarded address is added to Connection's `trustedHosts`. Without it every tailnet API call would answer 403.
+- **Plugin fences** — a host plugin that keeps its own loopback fence cannot see Connection's `trustedHosts`, and the [dsh-notion](https://github.com/anthony1x6000/dsh-notion-connector) connector is one: its settings API trusts the browser's exact `host:port`. When that connector is installed in the active profile, dsh-remote adds the forwarded authorities to `allowedHosts` in `~/.dsh/notion.json` at boot, so its settings page also works from the tailnet URL. Only the allowlist is touched — the token and workspace fields survive — and nothing is written when the connector is absent.
 - **Operator transport** — DSH keeps its settings and credential surfaces loopback-only: a page off loopback marks itself non-privileged, creates the settings mirror in memory mode, and never touches the Host document. A tailnet browser would therefore see read-only models and disabled API-key forms. The bundle injects the same transport global the desktop shell uses (`__DSH_TRANSPORT__ = { ownsHost: true }`), which restores host-persisted settings and credential writes.
 
 ## No Tailscale installation (PortableTailscale bridge)

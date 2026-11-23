@@ -1,7 +1,8 @@
 import assert from 'node:assert'
-import { readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { connect } from 'node:net'
 import { createServer } from 'node:net'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
@@ -61,13 +62,35 @@ const plugin = await import(pathToFileURL(join(root, entryFile)).href) as {
   startForwarders(options: ForwarderOptions): Promise<Forwarders>
   isTailnetAddress(address: string | undefined): boolean
   tailscaleIPv4(interfaces?: Record<string, { address: string, family: string, internal: boolean }[]>): string[]
+  tailscaleFqdn(): string
+  parseTailscaleFqdn(json: string): string
+  fenceHosts(authorities: string[], port: number): string[]
+  notionConfigPath(home?: string): string
+  syncNotionFence(options: {
+    authorities: string[]
+    port: number
+    configPath?: string
+    installed?: boolean
+    log?: (line: string) => void
+  }): 'updated' | 'unchanged' | 'skipped'
   internals: {
     tailscaleIPv4(): string[]
+    tailscaleFqdn(): string
     startForwarders(options: ForwarderOptions): Promise<Forwarders>
+    startPortable(ctx: unknown, options: { bin: string, hostname: string, port: number, extra: string[] }): () => void
+    syncNotionFence(options: { authorities: string[], port: number }): 'updated' | 'unchanged' | 'skipped'
   }
 }
 assert.strictEqual(plugin.name, 'dsh-remote', 'plugin name matches the row name')
 assert(plugin.inject.includes('webServer'), 'plugin activates after the webserver it forwards to')
+
+// apply() may update another plugin's fence at boot; stub the seam before the
+// first apply() call so a developer's real ~/.dsh/notion.json is never touched.
+const fenceCalls: { authorities: string[], port: number }[] = []
+plugin.internals.syncNotionFence = (options) => {
+  fenceCalls.push({ authorities: options.authorities, port: options.port })
+  return 'updated'
+}
 
 // Only Tailscale interfaces count, and only their IPv4 rows: a LAN address or
 // a tailnet IPv6 row must not become a forwarded authority.
@@ -187,6 +210,7 @@ try {
 const tailnet = fakeContext(['100.64.0.7'])
 plugin.apply(tailnet.ctx as never)
 assert.deepStrictEqual(tailnet.provided.get('remoteBind'), { authorities: ['100.64.0.7'] }, 'the fence learns the forwarded authority')
+assert.deepStrictEqual(fenceCalls.at(-1), { authorities: ['100.64.0.7'], port: 3080 }, 'the tailnet boot syncs the served authority into the plugin fence')
 const rows: unknown[] = []
 tailnet.emit(rows)
 // A tailnet browser is the operator: the page must be told it owns the Host,
@@ -299,6 +323,7 @@ try {
   delete process.env.DSH_REMOTE_PORTABLE_HOSTNAME
 }
 assert.deepStrictEqual(bridged.provided.get('remoteBind'), { authorities: ['dsh-e2e'] }, 'the tailnet name is the fence authority')
+assert.deepStrictEqual(fenceCalls.at(-1), { authorities: ['dsh-e2e'], port: 3080 }, 'the portable bridge syncs its tailnet name into the plugin fence')
 const bridgedRows: unknown[] = []
 bridged.emit(bridgedRows)
 assert.deepStrictEqual(bridgedRows, [{ kind: 'global', name: '__DSH_TRANSPORT__', value: { ownsHost: true } }], 'a portable browser is admitted as the operator')
@@ -332,3 +357,36 @@ try {
   console.log = originalLog
 }
 assert.deepStrictEqual(printed, ['dsh-remote (portable): http://dsh-e2e:3080?token=t'], 'the tokenized tailnet URL prints on connect')
+
+// --- Plugin fences ---
+// dsh-notion keeps its own loopback fence and compares the browser's exact
+// host:port, so Connection's trustedHosts cannot unblock it. The sync adds the
+// forwarded authorities to the connector's allowlist, leaving the token and
+// every other field alone.
+assert.strictEqual(plugin.notionConfigPath('/home/op'), join('/home/op', '.dsh', 'notion.json'), 'the connector config sits under the dsh home')
+assert.deepStrictEqual(plugin.fenceHosts(['100.64.0.7', 'virt.tail.ts.net'], 4890), ['100.64.0.7:4890', 'virt.tail.ts.net:4890'], 'the allowlist entry is host:port')
+
+const fenceDir = mkdtempSync(join(tmpdir(), 'dsh-remote-fence-'))
+const fencePath = join(fenceDir, 'notion.json')
+try {
+  const logs: string[] = []
+  assert.strictEqual(plugin.syncNotionFence({ authorities: ['virt.tail.ts.net'], port: 4890, configPath: fencePath, installed: true, log: (line) => { logs.push(line) } }), 'updated', 'an installed connector learns the authority')
+  assert.deepStrictEqual(JSON.parse(readFileSync(fencePath, 'utf8')), { allowedHosts: ['virt.tail.ts.net:4890'] }, 'only the allowlist is written')
+  if (process.platform !== 'win32') assert.strictEqual(statSync(fencePath).mode & 0o777, 0o600, 'the credential config stays private')
+  assert.strictEqual(logs.length, 1, 'the update is announced once')
+
+  writeFileSync(fencePath, JSON.stringify({ token: 'secret', workspaceName: 'ws', allowedHosts: ['100.64.0.7:4890'] }))
+  assert.strictEqual(plugin.syncNotionFence({ authorities: ['virt.tail.ts.net'], port: 4890, configPath: fencePath, installed: true, log: () => {} }), 'updated', 'a missing authority is merged in')
+  assert.deepStrictEqual(JSON.parse(readFileSync(fencePath, 'utf8')), { token: 'secret', workspaceName: 'ws', allowedHosts: ['100.64.0.7:4890', 'virt.tail.ts.net:4890'] }, 'the token and previously trusted hosts survive')
+  assert.strictEqual(plugin.syncNotionFence({ authorities: ['virt.tail.ts.net'], port: 4890, configPath: fencePath, installed: true, log: () => {} }), 'unchanged', 'an already trusted authority writes nothing')
+
+  writeFileSync(fencePath, 'not json')
+  assert.strictEqual(plugin.syncNotionFence({ authorities: ['virt.tail.ts.net'], port: 4890, configPath: fencePath, installed: true, log: () => {} }), 'skipped', 'an unreadable config is left alone')
+  assert.strictEqual(readFileSync(fencePath, 'utf8'), 'not json', 'the sync never clobbers an unreadable config')
+
+  const absent = join(fenceDir, 'absent', 'notion.json')
+  assert.strictEqual(plugin.syncNotionFence({ authorities: ['virt.tail.ts.net'], port: 4890, configPath: absent, installed: false, log: () => {} }), 'skipped', 'an absent connector is not configured')
+  assert.strictEqual(existsSync(absent), false, 'nothing is created for an uninstalled connector')
+} finally {
+  rmSync(fenceDir, { recursive: true, force: true })
+}
