@@ -87,6 +87,14 @@ not preserved, and the tailnet ACL is the only access gate.
 
 ## Security
 
+**Tailnet only.** The forwarders listen on the Tailscale addresses and also
+check each peer: anything outside `100.64.0.0/10` and `fd7a:115c:a1e0::/48` is
+dropped before a byte reaches DSH (and logged as `dsh-remote: refused …`).
+Linux accepts packets for a local address on any interface, so without this a
+LAN host with a route to the Tailscale IP could reach the forwarder over
+ethernet; Tailscale's firewall already drops tailnet source addresses that do
+not arrive on `tailscale0`. DSH itself still listens on loopback only.
+
 Admission is unchanged: the launch token and signed session cookie still authenticate every browser, and credential **reads** stay redacted, so stored key values never cross the wire. But a tailnet browser is treated as the operator: anyone holding a working URL can repoint providers and overwrite keys. Treat the printed `dsh-remote` URL as a root credential and keep the tailnet ACL for port 3080 restricted.
 
 The forwarder relays to loopback, so DSH sees every connection as coming from the local machine; per-client source addresses are not preserved.
